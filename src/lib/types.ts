@@ -1,3 +1,6 @@
+/** Maximum accepted length for submitted ticket text, enforced client- and server-side. */
+export const MAX_TICKET_LENGTH = 4000;
+
 export const CATEGORIES = [
   "billing",
   "bug",

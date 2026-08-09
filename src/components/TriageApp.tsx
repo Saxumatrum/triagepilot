@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { TriagedTicket } from "@/lib/types";
+import { MAX_TICKET_LENGTH, type TriagedTicket } from "@/lib/types";
 import { CategoryBadge, PriorityBadge } from "./Badges";
 import { TraceView } from "./TraceView";
 import { TicketList } from "./TicketList";
@@ -95,6 +95,7 @@ export function TriageApp() {
             onChange={(e) => setTicketText(e.target.value)}
             placeholder="Paste or type the customer's message here..."
             rows={5}
+            maxLength={MAX_TICKET_LENGTH}
             className="w-full rounded-lg border border-black/15 bg-transparent p-3 text-sm outline-none focus:border-black/40 dark:border-white/15 dark:focus:border-white/40"
           />
           <div className="flex items-center gap-3">

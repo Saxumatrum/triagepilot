@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { runTriageAgent } from "@/lib/agent";
 import { addTicket, getTickets } from "@/lib/store";
-import type { TriagedTicket } from "@/lib/types";
+import { MAX_TICKET_LENGTH, type TriagedTicket } from "@/lib/types";
 
 export async function GET() {
   return NextResponse.json({ tickets: getTickets() });
@@ -27,6 +27,13 @@ export async function POST(request: Request) {
   if (typeof ticketText !== "string" || ticketText.trim().length === 0) {
     return NextResponse.json(
       { error: "ticketText is required and must be a non-empty string." },
+      { status: 400 },
+    );
+  }
+
+  if (ticketText.length > MAX_TICKET_LENGTH) {
+    return NextResponse.json(
+      { error: `ticketText must be ${MAX_TICKET_LENGTH} characters or fewer.` },
       { status: 400 },
     );
   }
