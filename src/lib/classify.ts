@@ -97,8 +97,6 @@ const HIGH_KEYWORDS = [
   "outage",
   "can't log in",
   "can't access",
-  "all users",
-  "everyone",
   "blocked",
   "broken",
   "not working",
@@ -106,6 +104,43 @@ const HIGH_KEYWORDS = [
   "lost my data",
   "overcharged",
   "charged twice",
+];
+
+// An outage is urgent when it's wide: something is down (first list) AND it
+// hits many users or a revenue path (second list). Either alone is "high".
+const SERVICE_DOWN_KEYWORDS = [
+  "down",
+  "outage",
+  "502",
+  "503",
+  "504",
+  "500 error",
+  "failing",
+  "fails",
+  "not working",
+  "unavailable",
+  "unreachable",
+  "timing out",
+  "times out",
+];
+
+const WIDE_IMPACT_KEYWORDS = [
+  "all customers",
+  "all our customers",
+  "all users",
+  "all our users",
+  "every customer",
+  "every user",
+  "everyone",
+  "every request",
+  "all requests",
+  "nobody can",
+  "no one can",
+  "customers can't",
+  "customers cannot",
+  "production",
+  "checkout",
+  "payments",
 ];
 
 const LOW_KEYWORDS = [
@@ -119,29 +154,66 @@ const LOW_KEYWORDS = [
   "someday",
 ];
 
-function countMatches(text: string, keywords: string[]): number {
-  let count = 0;
-  for (const keyword of keywords) {
-    if (text.includes(keyword)) count++;
-  }
-  return count;
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function derivePriority(text: string, category: Category): Priority {
-  const urgentHits = countMatches(text, URGENT_KEYWORDS);
-  if (urgentHits > 0) return "urgent";
+/**
+ * Whole-word/phrase match, so "down" doesn't fire on "download" or
+ * "dropdown", and "fails" doesn't fire on "failsafe".
+ */
+function hasKeyword(text: string, keyword: string): boolean {
+  return new RegExp(`(^|[^a-z0-9])${escapeRegExp(keyword)}($|[^a-z0-9])`).test(text);
+}
 
-  const highHits = countMatches(text, HIGH_KEYWORDS);
-  if (highHits > 0) return "high";
+function findMatches(text: string, keywords: string[]): string[] {
+  return keywords.filter((keyword) => hasKeyword(text, keyword));
+}
 
-  const lowHits = countMatches(text, LOW_KEYWORDS);
-  if (lowHits > 0) return "low";
+function quoteList(keywords: string[]): string {
+  return keywords
+    .slice(0, 3)
+    .map((keyword) => `"${keyword}"`)
+    .join(", ");
+}
+
+function derivePriority(
+  text: string,
+  category: Category,
+): { priority: Priority; reason: string } {
+  const urgentHits = findMatches(text, URGENT_KEYWORDS);
+  if (urgentHits.length > 0) {
+    return { priority: "urgent", reason: `urgency signal ${quoteList(urgentHits)}` };
+  }
+
+  const downHits = findMatches(text, SERVICE_DOWN_KEYWORDS);
+  const wideHits = findMatches(text, WIDE_IMPACT_KEYWORDS);
+  if (downHits.length > 0 && wideHits.length > 0) {
+    return {
+      priority: "urgent",
+      reason: `outage (${quoteList(downHits)}) with wide impact (${quoteList(wideHits)})`,
+    };
+  }
+
+  const highHits = findMatches(text, HIGH_KEYWORDS);
+  if (highHits.length > 0) {
+    return { priority: "high", reason: `impact signal ${quoteList(highHits)}` };
+  }
+
+  const lowHits = findMatches(text, LOW_KEYWORDS);
+  if (lowHits.length > 0) {
+    return { priority: "low", reason: `low-urgency signal ${quoteList(lowHits)}` };
+  }
 
   // Billing and bug tickets default slightly higher than feature requests,
   // since money and broken functionality tend to be more time-sensitive.
-  if (category === "billing" || category === "bug") return "medium";
-  if (category === "feature-request") return "low";
-  return "medium";
+  if (category === "billing" || category === "bug") {
+    return { priority: "medium", reason: `default for ${category} tickets` };
+  }
+  if (category === "feature-request") {
+    return { priority: "low", reason: "default for feature requests" };
+  }
+  return { priority: "medium", reason: "no urgency signals" };
 }
 
 /**
@@ -151,14 +223,16 @@ function derivePriority(text: string, category: Category): Priority {
  * unit test independently of any model.
  */
 export function classifyTicket(ticketText: string): ClassificationResult {
-  const text = ticketText.toLowerCase();
+  // Curly apostrophes (common when pasting from email) would otherwise miss
+  // keywords like "can't log in".
+  const text = ticketText.toLowerCase().replace(/[‘’]/g, "'");
 
   let bestCategory: Category = "other";
   let bestScore = 0;
   const matchedKeywordsByCategory = new Map<Category, string[]>();
 
   for (const rule of CATEGORY_RULES) {
-    const matched = rule.keywords.filter((keyword) => text.includes(keyword));
+    const matched = findMatches(text, rule.keywords);
     if (matched.length > 0) {
       matchedKeywordsByCategory.set(rule.category, matched);
     }
@@ -168,15 +242,15 @@ export function classifyTicket(ticketText: string): ClassificationResult {
     }
   }
 
-  const priority = derivePriority(text, bestCategory);
+  const { priority, reason } = derivePriority(text, bestCategory);
 
   const matchedKeywords = matchedKeywordsByCategory.get(bestCategory) ?? [];
   const rationale =
     bestScore > 0
       ? `Matched category "${bestCategory}" on keyword(s): ${matchedKeywords
           .slice(0, 4)
-          .join(", ")}. Priority "${priority}" based on urgency signals in the ticket text.`
-      : `No strong category keywords matched; defaulted to "other". Priority "${priority}" based on urgency signals in the ticket text.`;
+          .join(", ")}. Priority "${priority}": ${reason}.`
+      : `No strong category keywords matched; defaulted to "other". Priority "${priority}": ${reason}.`;
 
   return {
     category: bestCategory,
