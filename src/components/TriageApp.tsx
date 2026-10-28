@@ -1,50 +1,61 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { withBase } from "@/lib/basePath";
 import { MAX_TICKET_LENGTH, type TriagedTicket } from "@/lib/types";
 import { CategoryBadge, PriorityBadge } from "./Badges";
 import { TraceView } from "./TraceView";
 import { TicketList } from "./TicketList";
 
-const SAMPLE_TICKET =
-  "Hi, I was charged twice for my subscription this month and I need this fixed ASAP - it's overdrawing my account. Please help!";
+// One per category, so visitors can see the agent handle different cases
+// in a click.
+const SAMPLE_TICKETS = [
+  {
+    label: "Double charge",
+    text: "Hi, I was charged twice for my subscription this month and I need this fixed ASAP - it's overdrawing my account. Please help!",
+  },
+  {
+    label: "API down",
+    text: "Our production integration started failing about 20 minutes ago. Every request to your API returns a 503 and our checkout is down for all customers. Is there an outage?",
+  },
+  {
+    label: "Locked out",
+    text: "I got a new phone and now I can't log in because the two-factor code goes to my old authenticator app. How do I get back into my account?",
+  },
+  {
+    label: "Feature idea",
+    text: "Love the product! It would be great if we could schedule reports to be emailed to the team every Monday morning. Any plans for that?",
+  },
+];
+
+const MAX_RECENT = 50;
 
 export function TriageApp() {
   const [ticketText, setTicketText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Kept in the browser only; the server stores nothing.
   const [tickets, setTickets] = useState<TriagedTicket[]>([]);
   const [selected, setSelected] = useState<TriagedTicket | null>(null);
   const [replyDraft, setReplyDraft] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/triage")
-      .then((res) => res.json())
-      .then((data: { tickets: TriagedTicket[] }) => {
-        if (cancelled) return;
-        setTickets(data.tickets ?? []);
-      })
-      .catch(() => {
-        // Non-fatal: the recent tickets sidebar just stays empty.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!ticketText.trim() || loading) return;
+    triage(ticketText);
+  }
 
+  async function triage(text: string) {
+    if (!text.trim() || loading) return;
+
+    setTicketText(text);
     setLoading(true);
     setError(null);
 
     try {
-      const res = await fetch("/api/triage", {
+      const res = await fetch(withBase("/api/triage"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ticketText }),
+        body: JSON.stringify({ ticketText: text }),
       });
       const data = await res.json();
 
@@ -53,7 +64,7 @@ export function TriageApp() {
       }
 
       const ticket: TriagedTicket = data.ticket;
-      setTickets(data.tickets ?? []);
+      setTickets((prev) => [ticket, ...prev].slice(0, MAX_RECENT));
       setSelected(ticket);
       setReplyDraft(ticket.reply);
       setTicketText("");
@@ -106,14 +117,21 @@ export function TriageApp() {
             >
               {loading ? "Triaging..." : "Triage ticket"}
             </button>
-            <button
-              type="button"
-              onClick={() => setTicketText(SAMPLE_TICKET)}
-              className="text-sm text-black/50 underline underline-offset-2 hover:text-black/80 dark:text-white/50 dark:hover:text-white/80"
-            >
-              Use sample ticket
-            </button>
           </div>
+          <p className="flex flex-wrap items-center gap-2 text-sm text-black/50 dark:text-white/50">
+            Or try a sample:
+            {SAMPLE_TICKETS.map((sample) => (
+              <button
+                key={sample.label}
+                type="button"
+                onClick={() => triage(sample.text)}
+                disabled={loading}
+                className="rounded-full border border-black/15 px-3 py-1 text-xs text-black/70 hover:border-black/40 disabled:opacity-40 dark:border-white/15 dark:text-white/70 dark:hover:border-white/40"
+              >
+                {sample.label}
+              </button>
+            ))}
+          </p>
           {error && (
             <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
               {error}

@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { runTriageAgent } from "@/lib/agent";
-import { addTicket, getTickets } from "@/lib/store";
+import { rateLimit } from "@/lib/rateLimit";
 import { MAX_TICKET_LENGTH, type TriagedTicket } from "@/lib/types";
 
-export async function GET() {
-  return NextResponse.json({ tickets: getTickets() });
-}
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
+  const limited = rateLimit(request, "triage", 20);
+  if (limited) return limited;
+
   let body: unknown;
   try {
     body = await request.json();
@@ -53,9 +54,9 @@ export async function POST(request: Request) {
       createdAt: new Date().toISOString(),
     };
 
-    addTicket(ticket);
-
-    return NextResponse.json({ ticket, tickets: getTickets() });
+    // Nothing is stored server-side: the "recent tickets" list lives in the
+    // visitor's browser, so visitors never see each other's tickets.
+    return NextResponse.json({ ticket });
   } catch (error) {
     console.error("Triage agent failed:", error);
     const message =

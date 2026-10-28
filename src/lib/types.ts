@@ -48,7 +48,7 @@ export interface ClassificationResult {
   rationale: string;
 }
 
-/** A fully triaged ticket, as stored in the in-memory session store. */
+/** A fully triaged ticket, kept in the visitor's browser for the session. */
 export interface TriagedTicket {
   id: string;
   ticketText: string;
